@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, onEvents, rupees, type Impact as ImpactData } from './api.ts';
-import { Nav, useCountUp } from './ui.tsx';
+import { Nav, Rupees, useCountUp } from './ui.tsx';
 
 const SCALES = [1, 1_000, 1_00_000, 10_00_000];
 const count = (n: number) => n.toLocaleString('en-IN');
@@ -49,7 +49,7 @@ export function Impact() {
       <div className="masthead">
         <div className="wrap">
           <h1>If {count(n)} {n === 1 ? 'merchant' : 'merchants'} had Ramesh Kirana’s week with Munshi</h1>
-          <span className="big-amt long num">{data ? rupees(income) : '₹—'}</span>
+          <span className="big-amt long num">{data ? <Rupees value={rupees(income)} /> : '₹—'}</span>
           <p>Extra money in merchants’ hands per week: udhaar recovered, group savings and win-back sales.</p>
           {data && data.perMerchant > 0 && <MoneyMix week={data.week} />}
           <div className="picker" role="group" aria-label="Number of merchants">

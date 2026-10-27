@@ -49,7 +49,9 @@ test('control shelf beat announces what is low and offers the group order', asyn
     assert.equal(r.line, 'Shelf dekh li: Surf Excel 1kg aur Parle-G kam hain.');
     assert.match(r.next.line, /^Surf Excel 1kg ka group order/);
     assert.deepEqual(events.map(e => e.type), ['shelf']);
-    assert.equal((await fetch(`${base}/api/shelf`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: 'aGk=', mediaType: 'image/jpeg' }) })).status, 503);
+    const photo = await fetch(`${base}/api/shelf`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: 'aGk=', mediaType: 'image/jpeg' }) });
+    assert.equal(photo.status, 503);
+    assert.equal((await photo.json()).error, 'Shelf ki photo Munshi app se kheenchiye.');
     assert.equal((await fetch(`${base}/webhook/whatsapp?hub.mode=subscribe&hub.verify_token=nope&hub.challenge=42`)).status, 403);
   } finally {
     off();
@@ -109,16 +111,6 @@ test('healthz answers without the demo key', async () => {
     const r = await fetch(`${base}/healthz`);
     assert.equal(r.status, 200);
     assert.deepEqual(await r.json(), { ok: true });
-  } finally { server.close(); }
-});
-
-test('an unreadable shelf photo gets a clear line, not a server error', async () => {
-  const fake = { messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'samajh nahi aaya' }] }) } };
-  const { server, base } = await boot({ anthropic: fake });
-  try {
-    const r = await fetch(`${base}/api/shelf`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ image: 'aGk=', mediaType: 'image/jpeg' }) });
-    assert.equal(r.status, 422);
-    assert.equal((await r.json()).error, 'Photo saaf nahi dikhi. Shelf ki photo dobara kheenchiye.');
   } finally { server.close(); }
 });
 

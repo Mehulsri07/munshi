@@ -1,0 +1,41 @@
+/* Generated from design/tokens.json by scripts/tokens.ts. Do not edit. */
+:root {
+  --color-paper: #F4EEE2;
+  --color-rule: #E7E0D2;
+  --color-margin-line: #B3261E73;
+  --color-ink: #1A1815;
+  --color-ink2: #5E5A52;
+  --color-ink3: #948E83;
+  --color-red: #B3261E;
+  --color-red-top: #C42F25;
+  --color-red-bottom: #A7231B;
+  --color-red-on-ink: #D2452F;
+  --color-ivory: #F4EEE2;
+  --color-dock-line: #4A453E;
+  --color-card: #FFFDF8;
+  --color-red-soft: #F3DED8;
+  --color-ok: #2E7D4F;
+  --color-warn: #B7791F;
+  --radius-dock: 26px;
+  --radius-button: 18px;
+  --radius-card: 14px;
+  --radius-tag: 6px;
+  --radius-pill: 999px;
+  --space-rule-step: 32px;
+  --space-margin-line-x: 20px;
+  --space-dock-inset: 10px;
+  --space-page-x: 20px;
+  --space-page-x-with-margin: 32px;
+  --type-rupee-size: 76;
+  --type-rupee-tracking: -0.035;
+  --type-who-size: 19;
+  --type-line-size: 18;
+  --type-line-height: 1.38;
+  --type-kicker-size: 9;
+  --type-kicker-tracking: 0.16;
+  --type-button-size: 17;
+  --type-chip-size: 10;
+  --motion-stamp-ms: 600ms;
+  --motion-banner-ms: 6500ms;
+  --motion-listen-window-ms: 6000ms;
+}

@@ -1,14 +1,12 @@
 import type { DB } from './db.ts';
-import type { AnthropicLike } from './actions.ts';
 import { refreshOpportunities } from './detectors.ts';
 import { getOpportunity, proposeOpportunity } from './opportunities.ts';
-import { MODEL, template, withTimeout } from './phrase.ts';
+import { template } from './phrase.ts';
+import { display } from './display.ts';
+import { spokenFor, toSpoken } from './spoken.ts';
 
 export type Level = 'empty' | 'low' | 'ok';
 export type Reading = { sku: string; level: Level };
-export class NoVisionError extends Error {}
-// The photo was looked at but nothing usable came back: never report that as "all fine".
-export class UnreadablePhotoError extends Error {}
 
 const items = (db: DB, merchantId: string) =>
   db.prepare('SELECT sku, name, est_qty, reorder_point FROM inventory WHERE merchant_id=? ORDER BY sku').all(merchantId) as any[];
@@ -35,32 +33,15 @@ export function shelfFlow(db: DB, merchantId: string, readings: Reading[], at: D
     `SELECT id FROM opportunities WHERE merchant_id=? AND status IN ('new','proposed') AND type IN ('group_buy_open','stock_low')
      AND json_extract(payload,'$.sku') IN (${low.map(() => '?').join(',')}) ORDER BY est_value DESC LIMIT 1`,
   ).get(merchantId, ...low) as any : null;
-  if (!best) return { line, next: null };
-  const opp = proposeOpportunity(db, merchantId, best.id);
-  return { line, next: { id: opp.id, line: template(getOpportunity(db, opp.id)!) } };
+  if (!best) return { line, spoken: toSpoken(line), next: null };
+  const opp = getOpportunity(db, proposeOpportunity(db, merchantId, best.id).id)!;
+  return { line, spoken: toSpoken(line), next: { id: opp.id, line: template(opp), spoken: spokenFor(opp), display: display(opp) } };
 }
 
-export async function analyzeShelf(db: DB, merchantId: string, image: { data: string; mediaType: string }, anthropic?: AnthropicLike): Promise<Reading[]> {
-  if (!anthropic) throw new NoVisionError('vision needs Claude');
-  const list = items(db, merchantId);
-  const res = await withTimeout(anthropic.messages.create({
-    model: MODEL, max_tokens: 2000, output_config: { effort: 'low' },
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.data } },
-        { type: 'text', text: `Yeh ek kirana dukaan ki shelf hai. In cheezon ke liye batao stock kitna dikh raha hai: ${list.map(i => `${i.sku} (${i.name})`).join(', ')}. Sirf JSON array do, jaise [{"sku":"surf_1kg","level":"low"}]. level sirf "empty", "low" ya "ok". Jo cheez dikh nahi rahi, use chhod do.` },
-      ],
-    }],
-  }), 20_000);
-  const text = (res.content ?? []).filter((b: any) => b.type === 'text').map((b: any) => b.text).join('');
-  const json = text.match(/\[[\s\S]*\]/)?.[0];
-  let parsed: unknown;
-  try { parsed = json ? JSON.parse(json) : null; } catch { parsed = null; }
-  const skus = new Set(list.map(i => i.sku));
-  const readings = (Array.isArray(parsed) ? parsed : [])
+// What the phone's model saw, trusted only for SKUs this shop stocks and the three known levels.
+export function cleanReadings(db: DB, merchantId: string, raw: unknown[]): Reading[] {
+  const skus = new Set(items(db, merchantId).map(i => i.sku));
+  return raw
     .filter((r: any) => skus.has(r?.sku) && ['empty', 'low', 'ok'].includes(r?.level))
     .map((r: any) => ({ sku: r.sku, level: r.level as Level }));
-  if (!readings.length) throw new UnreadablePhotoError('no usable shelf reading');
-  return readings;
 }

@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
-import { api } from './api.ts';
+import { useEffect, useState, type ReactNode } from 'react';
+import QRCode from 'qrcode';
+import { api, demoKey } from './api.ts';
 import { Nav } from './ui.tsx';
 
 type Entry = { at: string; action: string; text: string; fail: boolean };
@@ -9,6 +10,12 @@ export function Control() {
   const [walkin, setWalkin] = useState(120);
   const [minutes, setMinutes] = useState(10);
   const [busy, setBusy] = useState<string | null>(null);
+  const [pairQr, setPairQr] = useState<string | null>(null);
+  useEffect(() => {
+    // The app reads this to find the server and the demo key; /control is opened on the public URL.
+    const payload = JSON.stringify({ url: location.origin, key: demoKey });
+    QRCode.toDataURL(payload, { margin: 1, width: 280 }).then(setPairQr).catch(() => setPairQr(null));
+  }, []);
 
   const run = async (action: string, body: unknown = {}) => {
     if (action === 'reset' && !confirm('Demo reset karein? Saara data dobara seed hoga aur Soundbox wapas shuru se khulega.')) return;
@@ -53,6 +60,12 @@ export function Control() {
             {[10, 60, 1440].map(m => <option key={m} value={m}>{m === 1440 ? '1 din' : `${m} min`}</option>)}
           </select></label>)}
         {row('Demo reset', 'Saara data dobara seed, ghadi wapas abhi par.', 'reset', 'Reset')}
+
+        <h2 className="section-title">Soundbox app jodiye</h2>
+        <div className="control">
+          <div><h2>Pairing QR</h2><p>Munshi app kholiye, “Jodiye” par yeh QR scan kijiye. Server ka pata aur demo key isi mein hai.</p></div>
+          {pairQr ? <img src={pairQr} alt="Munshi app pairing QR" width={140} height={140} /> : <span>QR nahi bana</span>}
+        </div>
 
         <h2 className="section-title">Log</h2>
         <ul className="log" aria-live="polite">

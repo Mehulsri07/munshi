@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { api, rupees, type PayLink } from './api.ts';
-import { CheckIcon, CrossIcon, InfoIcon } from './ui.tsx';
+import { api, rupees, ApiError, type PayLink } from './api.ts';
+import { CheckIcon, CrossIcon, InfoIcon, Rupees } from './ui.tsx';
 
-type State = 'loading' | 'ready' | 'paying' | 'paid' | 'already' | 'unknown' | 'error';
+type State = 'loading' | 'ready' | 'paying' | 'paid' | 'already' | 'expired' | 'unknown' | 'error';
 
 export function Pay({ refId }: { refId: string }) {
   const [link, setLink] = useState<PayLink | null>(null);
@@ -10,7 +10,7 @@ export function Pay({ refId }: { refId: string }) {
 
   useEffect(() => {
     api.getPay(refId)
-      .then(l => { setLink(l); setState(l.status === 'paid' ? 'already' : 'ready'); })
+      .then(l => { setLink(l); setState(l.status === 'paid' ? 'already' : l.status === 'expired' ? 'expired' : 'ready'); })
       .catch(e => setState(e.status === 404 ? 'unknown' : 'error'));
   }, [refId]);
 
@@ -19,10 +19,22 @@ export function Pay({ refId }: { refId: string }) {
     try {
       const r = await api.pay(refId);
       setState(r.alreadyPaid ? 'already' : 'paid');
-    } catch {
-      setState('error');
+    } catch (e) {
+      setState(e instanceof ApiError && e.status === 410 ? 'expired' : 'error');
     }
   };
+
+  if (state === 'expired') {
+    return (
+      <main className="paper">
+        <div className="masthead"><div className="wrap"><h1>{link?.merchantName ?? 'Bhugtaan link'}</h1></div></div>
+        <div className="wrap pay-body">
+          <div className="result" data-tone="decline"><CrossIcon /><div><h2>Yeh link khatam ho gaya.</h2><p>{link?.merchantName ?? 'Dukaandaar'} se naya link maangiye. Paise nahi kate.</p></div></div>
+          <p className="fine">Demo payment — koi asli paisa nahi katega.</p>
+        </div>
+      </main>
+    );
+  }
 
   if (state === 'unknown') {
     return (
@@ -42,7 +54,8 @@ export function Pay({ refId }: { refId: string }) {
         <div className="wrap">
           <h1>{link?.merchantName ?? 'Load ho raha hai…'}</h1>
           <p>{link ? (done ? `${link.customerName}, aapka udhaar chuk gaya` : `${link.customerName}, aapka baaki udhaar`) : ' '}</p>
-          <span className="big-amt num" aria-label={link ? rupees(link.amount) : undefined}>{link ? rupees(link.amount) : '₹—'}</span>
+          <span className="big-amt num" aria-label={link ? rupees(link.amount) : undefined}>{link ? <Rupees value={rupees(link.amount)} /> : '₹—'}</span>
+          {done && <span className="stamp" aria-label="Chuka diya">Chuka<em>diya</em>{new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</span>}
         </div>
       </div>
 

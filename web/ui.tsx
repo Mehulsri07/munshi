@@ -15,15 +15,7 @@ export const InfoIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M12 11v5
 export const CoinIcon = icon(<><circle cx="12" cy="12" r="9" /><path d="M9 8h6M9 11h6M9 8c4 0 4 6 0 6l5 3" /></>);
 
 export function Wordmark() {
-  return (
-    <span className="wordmark">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <rect x="2" y="15" width="20" height="5" rx="1.5" fill="var(--saffron)" />
-        <path d="M6 5v7M10 3v9M14 6v6M18 4v8" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-      </svg>
-      <span>Munshi</span>
-    </span>
-  );
+  return <span className="wordmark">Munshi<i aria-hidden="true" /></span>;
 }
 
 export function Meter({ on }: { on: boolean }) {
@@ -94,10 +86,6 @@ export function Clock() {
   return <span className="clock num">{t}</span>;
 }
 
-export function TestCard() {
-  return <span className="bars" aria-hidden="true"><i /><i /><i /><i /></span>;
-}
-
 export function Nav({ current }: { current: 'soundbox' | 'ledger' | 'control' | 'paytm' }) {
   const links = [['soundbox', 'Soundbox'], ['ledger', 'Hisaab'], ['paytm', 'Impact'], ['control', 'Control']] as const;
   return (
@@ -133,7 +121,7 @@ export function Caption({ text, tone, run, step = 300 }: { text: string; tone: T
             if (big) bigUsed = true;
             return (
               <span key={`${k}-${j}`} className={`word${m ? ' amt num' : ''}${big ? ' big' : ''}`} style={{ ['--i' as any]: i++ }}>
-                {m ? <>{m[1]}{m[2] && <span className="amt-tail">{m[2]}</span>}</> : part}
+                {m ? <><span className="rupee">₹</span>{m[1].slice(1)}{m[2] && <span className="amt-tail">{m[2]}</span>}</> : part}
               </span>
             );
           });
@@ -141,4 +129,9 @@ export function Caption({ text, tone, run, step = 300 }: { text: string; tone: T
       </p>
     </div>
   );
+}
+
+// Large rupee figures: small raised ₹ beside the numerals, as on the app and the deck.
+export function Rupees({ value }: { value: string }) {
+  return value.startsWith('₹') ? <><span className="rupee">₹</span>{value.slice(1)}</> : <>{value}</>;
 }

@@ -11,5 +11,5 @@
     "skipLibCheck": true,
     "lib": ["es2022", "dom"]
   },
-  "include": ["server", "web", "vite.config.ts"]
+  "include": ["server", "web", "scripts", "vite.config.ts"]
 }

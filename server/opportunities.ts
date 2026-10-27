@@ -1,6 +1,7 @@
 import type { DB } from './db.ts';
 import { refreshOpportunities } from './detectors.ts';
 import { executors, type ActionResult, type Deps } from './actions.ts';
+import { briefTitle } from './display.ts';
 
 export type OppRow = {
   id: number; merchantId: string; type: string; key: string; payload: any; estValue: number; status: string;
@@ -66,6 +67,20 @@ export async function confirmOpportunity(db: DB, oppId: number, deps: Deps, at: 
   db.prepare('UPDATE actions SET result=? WHERE id=?').run(JSON.stringify(result), actionId);
   db.prepare("UPDATE opportunities SET status='done' WHERE id=?").run(oppId);
   return result;
+}
+
+export type BriefItem = { id: number; type: string; title: string; amount: number };
+
+// The morning list, read-only: top three brief-scope tasks by value. Nothing is proposed here;
+// the session still asks them one at a time through nextOpportunity.
+export function briefList(db: DB, merchantId: string, at: Date): { items: BriefItem[]; total: number } {
+  refreshOpportunities(db, merchantId, at);
+  const rows = db.prepare(
+    `SELECT id FROM opportunities WHERE merchant_id=? AND status IN ('new','proposed')
+     AND type IN (${BRIEF_TYPES.map(() => '?').join(',')}) ORDER BY est_value DESC, id LIMIT 3`,
+  ).all(merchantId, ...BRIEF_TYPES) as any[];
+  const items = rows.map(r => getOpportunity(db, r.id)!).map(o => ({ id: o.id, type: o.type, title: briefTitle(o), amount: o.estValue }));
+  return { items, total: items.reduce((s, i) => s + i.amount, 0) };
 }
 
 export function shouldInterrupt(db: DB, merchantId: string, at: Date): boolean {

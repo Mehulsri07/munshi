@@ -1,0 +1,7 @@
+[
+  {"type":"announce","text":"Sharma ji ne ₹450 chuka diye","spoken":"Sharma ji ने ₹450 चुका दिए"},
+  {"type":"paid","ref":"ab12cd","name":"Sharma ji","amount":450},
+  {"type":"brief"}, {"type":"nudge"}, {"type":"ledger"}, {"type":"reset"},
+  {"type":"shelf","line":"Shelf dekh li: Surf Excel 1kg aur Parle-G kam hain.","spoken":"शेल्फ़ देख ली: Surf Excel 1kg और Parle-G कम हैं।","next":{"id":7,"line":"Surf Excel 1kg ka group order chal raha hai","spoken":"…","display":{"who":"Surf Excel 1kg group order","amount":143,"rest":"bachenge: 4 dukaanein, 8% bachat. Jud jaaun?"}}},
+  {"type":"something_new","x":1}
+]

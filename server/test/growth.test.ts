@@ -11,7 +11,7 @@ import { refreshOpportunities } from '../detectors.ts';
 import { proposeOpportunity, confirmOpportunity, nextOpportunity, NotProposedError } from '../opportunities.ts';
 import { template } from '../phrase.ts';
 import { getLedger } from '../ledger.ts';
-import { shelfFlow, analyzeShelf, NoVisionError, UnreadablePhotoError } from '../shelf.ts';
+import { shelfFlow } from '../shelf.ts';
 import { AT, fresh, deps } from './helpers.ts';
 
 const oppId = (db: any, type: string) => {
@@ -93,13 +93,6 @@ test('an all-ok shelf says so and proposes nothing new', () => {
   const r = shelfFlow(fresh(), HERO_ID, [{ sku: 'tata_salt', level: 'ok' }], AT);
   assert.equal(r.line, 'Shelf dekh li, sab theek hai.');
   assert.equal(r.next, null);
-});
-
-test('shelf vision needs Claude and keeps only known SKUs and levels', async () => {
-  const img = { data: 'aGk=', mediaType: 'image/jpeg' };
-  await assert.rejects(analyzeShelf(fresh(), HERO_ID, img), NoVisionError);
-  const fake = { messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'Yeh raha: [{"sku":"surf_1kg","level":"empty"},{"sku":"bogus","level":"low"},{"sku":"parle_g","level":"meh"}]' }] }) } };
-  assert.deepEqual(await analyzeShelf(fresh(), HERO_ID, img, fake), [{ sku: 'surf_1kg', level: 'empty' }]);
 });
 
 test('refresh drops new opportunities whose condition no longer holds', () => {
@@ -193,12 +186,4 @@ test('a failed action leaves no partial writes and can be retried with another h
   const r = await confirmOpportunity(db, id, deps, AT);
   assert.equal(r.line, 'Jud gaye! 4 dukaanein, 8% bachat, ₹143 bache.');
   assert.equal((db.prepare('SELECT COUNT(*) n FROM group_members').get() as any).n, 4);
-});
-
-test('an unreadable shelf photo is reported as unreadable, never as all fine', async () => {
-  const img = { data: 'aGk=', mediaType: 'image/jpeg' };
-  const reply = (text: string) => ({ messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text }] }) } });
-  for (const text of ['Photo dhundhli hai, kuch nahi dikha.', '[{"sku": "surf_1kg", "level": ', '[]', '[{"sku":"bogus","level":"low"}]']) {
-    await assert.rejects(analyzeShelf(fresh(), HERO_ID, img, reply(text)), UnreadablePhotoError, text);
-  }
 });

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import { api, onEvents, rupees, ApiError, type ActionResult, type Ledger, type ShelfResult } from './api.ts';
 import { speak, listen, canListen, chime } from './speech.ts';
-import { Caption, Clock, OnAir, Ticker, useCountUp, Wordmark, TestCard, MicIcon, CameraIcon, CheckIcon, CrossIcon, CoinIcon, type AirMode, type Tone } from './ui.tsx';
+import { Caption, Clock, OnAir, Ticker, useCountUp, Wordmark, Rupees, MicIcon, CameraIcon, CheckIcon, CoinIcon, type AirMode, type Tone } from './ui.tsx';
 
 type Answer = { kind: 'yes' } | { kind: 'no' } | { kind: 'text'; text: string } | { kind: 'skip' };
 const OOPS = 'Kuch gadbad hui. Dobara koshish kijiye.';
@@ -152,7 +152,7 @@ export function Soundbox() {
 
   useEffect(() => {
     if (!pay) { setQr(null); return; }
-    QRCode.toDataURL(pay.url, { margin: 1, width: 360, color: { dark: '#141d5c', light: '#ffffff' } }).then(setQr);
+    QRCode.toDataURL(pay.url, { margin: 1, width: 360, color: { dark: '#1A1815', light: '#ffffff' } }).then(setQr);
   }, [pay]);
 
   useEffect(() => {
@@ -198,15 +198,17 @@ export function Soundbox() {
     return (
       <main className="gate">
         <div className="gate-mark">
+          <span className="kicker">Ramesh Kirana · Aliganj</span>
           <h1>Munshi</h1>
-          <TestCard />
-          <p>Ramesh Kirana ka AI business partner. Paise ka kaam bataata hai, aapki haan par karta hai.</p>
+          <p>Paise ka kaam bataata hai, aapki haan par karta hai.</p>
         </div>
         <div className="gate-cta">
-          <button className="btn btn-ask btn-wide" autoFocus onClick={() => { chime(); setStarted(true); void runSession({ greet: true, scope: 'brief', max: 3 }); }}>
-            Dukaan kholo
-          </button>
-          <small>Tap karte hi Munshi bolna shuru karega.</small>
+          <div className="dock">
+            <button className="btn btn-ask btn-wide" autoFocus onClick={() => { chime(); setStarted(true); void runSession({ greet: true, scope: 'brief', max: 3 }); }}>
+              Dukaan kholo
+            </button>
+            <small>Tap karte hi Munshi bolna shuru karega.</small>
+          </div>
         </div>
       </main>
     );
@@ -234,38 +236,40 @@ export function Soundbox() {
 
         <div className="stage-body">
           <Caption key={caption.n} text={caption.text} tone={caption.tone} run step={talking ? 300 : 70} />
-          <div className="heard" aria-live="polite">{heard && (heard.startsWith('Sunaai') ? heard : <>Aapne kaha: <q>{heard}</q></>)}</div>
         </div>
 
-        <div>
+        <div style={{ display: 'grid', gap: 12 }}>
           {qr && pay && (
             <div className="qr">
               <img src={qr} alt={`${pay.name ?? 'Grahak'} ke liye bhugtaan QR`} />
               <div>
                 <strong>{pay.name ? `${pay.name}, scan karke chukayein` : 'Scan karke chukayein'}</strong>
-                {pay.amount !== undefined && <span className="qr-amt num">{rupees(pay.amount)}</span>}
+                {pay.amount !== undefined && <span className="qr-amt num"><Rupees value={rupees(pay.amount)} /></span>}
                 <a href={pay.url} target="_blank" rel="noreferrer">Link {ref}</a>
               </div>
             </div>
           )}
-          <div className="answers">
-            <button className="btn btn-ask" disabled={!pending} onClick={() => answer({ kind: 'yes' })}><CheckIcon />Haan</button>
-            <button className="btn btn-ghost" disabled={!pending} onClick={() => answer({ kind: 'no' })}><CrossIcon />Nahi</button>
-          </div>
-          <div className="tools-row">
-            <div className="tool">
-              <button className="round" data-on={listening} disabled={!canListen() || busy} onClick={onMic} aria-label="Bolkar poochhiye">
-                <MicIcon />
-              </button>
-              <span>{canListen() ? 'Boliye' : 'Mic nahi'}</span>
+          <div className="dock">
+            <div className="heard" aria-live="polite">{heard && (heard.startsWith('Sunaai') ? heard : <>Aapne kaha: <q>{heard}</q></>)}</div>
+            <div className="answers">
+              <button className="btn btn-ask" disabled={!pending} onClick={() => answer({ kind: 'yes' })}><CheckIcon />Haan</button>
+              <button className="btn btn-ghost" disabled={!pending} onClick={() => answer({ kind: 'no' })}>Nahi</button>
             </div>
-            <div className="tool">
-              <label className="round" aria-disabled={busy}>
-                <CameraIcon />
-                <input className="sr-only" type="file" accept="image/*" capture="environment" disabled={busy}
-                  aria-label="Shelf ki photo bhejiye" onChange={e => { void onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
-              </label>
-              <span>Shelf photo</span>
+            <div className="tools-row">
+              <div className="tool">
+                <button className="round" data-on={listening} disabled={!canListen() || busy} onClick={onMic} aria-label="Bolkar poochhiye">
+                  <MicIcon />
+                </button>
+                <span>{canListen() ? 'Boliye' : 'Mic nahi'}</span>
+              </div>
+              <div className="tool">
+                <label className="round" aria-disabled={busy}>
+                  <CameraIcon />
+                  <input className="sr-only" type="file" accept="image/*" capture="environment" disabled={busy}
+                    aria-label="Shelf ki photo bhejiye" onChange={e => { void onPhoto(e.target.files?.[0]); e.target.value = ''; }} />
+                </label>
+                <span>Shelf photo</span>
+              </div>
             </div>
           </div>
         </div>

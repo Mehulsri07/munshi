@@ -6,22 +6,30 @@ import type { DB } from './db.ts';
 import type { Deps } from './actions.ts';
 import { now, advance, resetClock } from './clock.ts';
 import { seed, HERO_ID, hashPayer } from './seed.ts';
-import { nextOpportunity, confirmOpportunity, declineOpportunity, shouldInterrupt, NotProposedError } from './opportunities.ts';
-import { phrase } from './phrase.ts';
+import { nextOpportunity, confirmOpportunity, declineOpportunity, shouldInterrupt, briefList, NotProposedError } from './opportunities.ts';
+import { phraseFull } from './phrase.ts';
+import { SHELF_IN_APP } from './lines.ts';
+import { display } from './display.ts';
+import { toSpoken } from './spoken.ts';
 import { converse, DECLINED } from './agent.ts';
-import { getPayLink, payLink, recordWalkin, recordCustomerPayment } from './payments.ts';
+import { getPayLink, payLink, recordWalkin, recordCustomerPayment, expireLinks } from './payments.ts';
 import { getLedger } from './ledger.ts';
 import { getImpact } from './impact.ts';
-import { publish, subscribe } from './events.ts';
-import { shelfFlow, analyzeShelf, NoVisionError, UnreadablePhotoError, type Reading } from './shelf.ts';
-import type { FetchMedia } from './whatsapp.ts';
+import { publish, subscribe, poll } from './events.ts';
+import { shelfFlow, cleanReadings, type Reading } from './shelf.ts';
+import { getFacts } from './facts.ts';
+import { proposeReminder } from './propose.ts';
+import { getProfile, saveProfile, normalisePhone, ProfileError } from './profile.ts';
 
-export type AppDeps = Deps & { demoKey?: string; demoPhone?: string; fetchMedia?: FetchMedia; waVerifyToken?: string };
+export type AppDeps = Deps & { demoKey?: string; demoPhone?: string; waVerifyToken?: string; pollMs?: number };
 type Handler = (ctx: { db: DB; deps: AppDeps; params: string[]; query: URLSearchParams; body: any; res: ServerResponse }) => Promise<unknown> | unknown;
 
 const CANNED_SHELF: Reading[] = [{ sku: 'surf_1kg', level: 'empty' }, { sku: 'parle_g', level: 'low' }];
-const NO_VISION = 'Photo dekhne ke liye AI chalu nahi hai.';
 const UNREADABLE = 'Photo saaf nahi dikhi. Shelf ki photo dobara kheenchiye.';
+
+// Everything Munshi says carries its Devanagari when known, for the app's Hindi voice.
+const announce = (text: string) => publish({ type: 'announce', text, spoken: toSpoken(text) });
+const withSpoken = <T extends { line: string }>(r: T) => ({ ...r, spoken: toSpoken(r.line) });
 
 function publishShelf(db: DB, readings: Reading[]) {
   const r = shelfFlow(db, HERO_ID, readings, now());
@@ -29,19 +37,18 @@ function publishShelf(db: DB, readings: Reading[]) {
   return r;
 }
 
-// A WhatsApp image from the shop: read the shelf and tell the Soundbox. Everything else is ignored.
-async function handleWhatsApp(db: DB, deps: AppDeps, body: any) {
-  const msg = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
-  if (msg?.type !== 'image' || !deps.fetchMedia) return;
-  const image = msg.image?.id ? await deps.fetchMedia(msg.image.id) : null;
-  if (!image) return;
-  try {
-    publishShelf(db, await analyzeShelf(db, HERO_ID, image, deps.anthropic));
-  } catch (e) {
-    if (e instanceof NoVisionError) publish({ type: 'announce', text: NO_VISION });
-    else if (e instanceof UnreadablePhotoError) publish({ type: 'announce', text: UNREADABLE });
-    else console.error(e);
+// Tell the Soundbox once per link that ran out; the reminder is back on its list with a "naya link" line.
+function sweepLinks(db: DB) {
+  for (const x of expireLinks(db, now())) {
+    publish({ type: 'expired', ...x });
+    announce(`${x.name} ka pay link khatam ho gaya.`);
   }
+}
+
+// A shelf photo sent on WhatsApp: photos are read on the phone now, so say where to take it.
+function handleWhatsApp(body: any) {
+  const msg = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];
+  if (msg?.type === 'image') announce(SHELF_IN_APP);
 }
 
 const DIST = fileURLToPath(new URL('../web/dist/', import.meta.url));
@@ -58,27 +65,63 @@ class HttpError extends Error {
 const routes: Array<[string, RegExp, Handler]> = [
   ['GET', /^\/healthz$/, () => ({ ok: true })],
   ['GET', /^\/api\/events$/, ({ res }) => { subscribe(res); return undefined; }],
-  ['POST', /^\/api\/next$/, async ({ db, deps, body }) => {
+  ['GET', /^\/api\/events\/poll$/, ({ deps, query }) => {
+    const raw = query.get('after');
+    const after = raw === null ? undefined : Number(raw);
+    if (after !== undefined && !Number.isFinite(after)) throw new HttpError(400, 'after must be a number');
+    return poll(after, deps.pollMs ?? 25_000);
+  }],
+  ['POST', /^\/api\/next$/, ({ db, body }) => {
+    sweepLinks(db);
     const at = now();
     if (body.interrupt && !shouldInterrupt(db, HERO_ID, at)) return { id: null };
     const opp = nextOpportunity(db, HERO_ID, at, body.scope === 'all' ? 'all' : 'brief');
-    return opp ? { id: opp.id, type: opp.type, line: await phrase(opp, deps.anthropic) } : { id: null };
+    if (!opp) return { id: null };
+    const { line, spoken } = phraseFull(opp);
+    return { id: opp.id, type: opp.type, line, spoken, display: display(opp) };
+  }],
+  ['GET', /^\/api\/brief$/, ({ db }) => { sweepLinks(db); return briefList(db, HERO_ID, now()); }],
+  ['GET', /^\/api\/facts$/, ({ db }) => getFacts(db, HERO_ID, now())],
+  ['POST', /^\/api\/onboard\/lookup$/, ({ db, body }) => {
+    // Simulated Paytm for Business lookup: any valid number "finds" the demo shop.
+    const phone = normalisePhone(body.phone);
+    if (!phone) throw new HttpError(400, 'bad_phone');
+    return { profile: { ...getProfile(db, HERO_ID), phone } };
+  }],
+  ['GET', /^\/api\/merchant$/, ({ db }) => ({ profile: getProfile(db, HERO_ID) })],
+  ['POST', /^\/api\/merchant$/, ({ db, body }) => {
+    try { return { profile: saveProfile(db, HERO_ID, body, now()) }; }
+    catch (e) { if (e instanceof ProfileError) throw new HttpError(400, e.message); throw e; }
+  }],
+  ['POST', /^\/api\/propose$/, ({ db, body }) => {
+    if (body.kind !== 'udhaar_reminder' || !Number.isInteger(body.khataId)) throw new HttpError(400, 'kind udhaar_reminder and integer khataId required');
+    const r = proposeReminder(db, HERO_ID, now(), body.khataId);
+    if ('error' in r) throw new HttpError(r.error === 'khata_not_found' ? 404 : 409, r.error);
+    const { line, spoken } = phraseFull(r.opp);
+    return { opportunityId: r.opp.id, line, spoken, display: display(r.opp) };
+  }],
+  ['POST', /^\/api\/shelf\/readings$/, ({ db, body }) => {
+    if (!Array.isArray(body.readings)) throw new HttpError(400, 'readings required');
+    const readings = cleanReadings(db, HERO_ID, body.readings);
+    if (!readings.length) throw new HttpError(422, UNREADABLE);
+    return shelfFlow(db, HERO_ID, readings, now());
   }],
   ['POST', /^\/api\/opportunities\/(\d+)\/confirm$/, async ({ db, deps, params }) => {
     const r = await confirmOpportunity(db, Number(params[0]), deps, now());
     publish({ type: 'ledger' });
-    return r;
+    return withSpoken(r);
   }],
-  ['POST', /^\/api\/opportunities\/(\d+)\/decline$/, ({ db, params }) => { declineOpportunity(db, Number(params[0])); return { line: DECLINED }; }],
-  ['POST', /^\/api\/converse$/, ({ db, deps, body }) => {
+  ['POST', /^\/api\/opportunities\/(\d+)\/decline$/, ({ db, params }) => { declineOpportunity(db, Number(params[0])); return withSpoken({ line: DECLINED }); }],
+  ['POST', /^\/api\/converse$/, async ({ db, deps, body }) => {
     if (typeof body.text !== 'string' || !body.text.trim()) throw new HttpError(400, 'text required');
-    return converse(db, HERO_ID, body.text, now(), deps);
+    return withSpoken(await converse(db, HERO_ID, body.text, now(), deps));
   }],
-  ['GET', /^\/api\/pay\/([\w-]+)$/, ({ db, params }) => getPayLink(db, params[0]) ?? Promise.reject(new HttpError(404, 'unknown link'))],
+  ['GET', /^\/api\/pay\/([\w-]+)$/, ({ db, params }) => getPayLink(db, params[0], now()) ?? Promise.reject(new HttpError(404, 'unknown link'))],
   ['POST', /^\/api\/pay\/([\w-]+)$/, ({ db, params }) => {
     const r = payLink(db, params[0], now());
     if (!r) throw new HttpError(404, 'unknown link');
-    if (!r.alreadyPaid) { publish({ type: 'announce', text: r.announcement }); publish({ type: 'paid', ref: params[0] }); publish({ type: 'ledger' }); }
+    if (r.expired) throw new HttpError(410, 'expired');
+    if (!r.alreadyPaid) { announce(r.announcement); publish({ type: 'paid', ref: params[0], name: r.name, amount: r.amount }); publish({ type: 'ledger' }); }
     return { alreadyPaid: r.alreadyPaid };
   }],
   ['GET', /^\/api\/ledger$/, ({ db }) => getLedger(db, HERO_ID, now())],
@@ -96,17 +139,8 @@ const routes: Array<[string, RegExp, Handler]> = [
   }],
   ['POST', /^\/api\/control\/advance$/, ({ body }) => { advance(Number(body.minutes) || 0); return { now: now().toISOString() }; }],
   ['POST', /^\/api\/control\/brief$/, () => { publish({ type: 'brief' }); return { ok: true }; }],
-  ['POST', /^\/api\/shelf$/, async ({ db, deps, body }) => {
-    if (typeof body.image !== 'string' || !body.image) throw new HttpError(400, 'image required');
-    try {
-      const readings = await analyzeShelf(db, HERO_ID, { data: body.image, mediaType: body.mediaType || 'image/jpeg' }, deps.anthropic);
-      return shelfFlow(db, HERO_ID, readings, now());
-    } catch (e) {
-      if (e instanceof NoVisionError) throw new HttpError(503, NO_VISION);
-      if (e instanceof UnreadablePhotoError) throw new HttpError(422, UNREADABLE);
-      throw e;
-    }
-  }],
+  // Photos are read by the phone's model now; the web stage fallback says so instead of failing silently.
+  ['POST', /^\/api\/shelf$/, () => { throw new HttpError(503, SHELF_IN_APP); }],
   ['POST', /^\/api\/control\/shelf$/, ({ db }) => publishShelf(db, CANNED_SHELF)],
   ['POST', /^\/api\/control\/nudge$/, () => { publish({ type: 'nudge' }); return { ok: true }; }],
   ['GET', /^\/webhook\/whatsapp$/, ({ deps, query, res }) => {
@@ -116,12 +150,9 @@ const routes: Array<[string, RegExp, Handler]> = [
     res.end(query.get('hub.challenge') ?? '');
     return undefined;
   }],
-  ['POST', /^\/webhook\/whatsapp$/, ({ db, deps, body }) => {
-    handleWhatsApp(db, deps, body).catch(e => console.error(e)); // Meta wants a fast 200; the work continues after.
-    return { ok: true };
-  }],
+  ['POST', /^\/webhook\/whatsapp$/, ({ body }) => { handleWhatsApp(body); return { ok: true }; }],
   ['POST', /^\/api\/control\/regular$/, ({ db }) => {
-    for (const text of recordCustomerPayment(db, HERO_ID, 180, hashPayer(`${HERO_ID}:loyal`), now())) publish({ type: 'announce', text });
+    for (const text of recordCustomerPayment(db, HERO_ID, 180, hashPayer(`${HERO_ID}:loyal`), now())) announce(text);
     publish({ type: 'ledger' });
     return { ok: true };
   }],
@@ -131,14 +162,14 @@ const routes: Array<[string, RegExp, Handler]> = [
        WHERE c.merchant_id=? AND t.returned_at IS NULL ORDER BY c.id DESC LIMIT 1`,
     ).get(HERO_ID) as any;
     if (!t) throw new HttpError(409, 'Pehle win-back offer bhejiye');
-    for (const text of recordCustomerPayment(db, HERO_ID, 340, t.payer_hash, now())) publish({ type: 'announce', text });
+    for (const text of recordCustomerPayment(db, HERO_ID, 340, t.payer_hash, now())) announce(text);
     publish({ type: 'ledger' });
     return { ok: true };
   }],
   ['POST', /^\/api\/control\/walkin$/, ({ db, body }) => {
     const amount = Math.round(Number(body.amount));
     if (!(amount > 0)) throw new HttpError(400, 'amount required');
-    publish({ type: 'announce', text: recordWalkin(db, HERO_ID, amount, now()) });
+    announce(recordWalkin(db, HERO_ID, amount, now()));
     return { ok: true };
   }],
 ];
@@ -173,7 +204,7 @@ const send = (res: ServerResponse, status: number, data: unknown) => {
 };
 
 export function createApp(db: DB, deps: AppDeps): http.Server {
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://x');
     const path = url.pathname;
     // Public tunnel: merchant and control APIs need the demo key; the customer pay API does not.
@@ -198,4 +229,8 @@ export function createApp(db: DB, deps: AppDeps): http.Server {
       send(res, 500, { error: 'internal' });
     }
   });
+  const sweep = setInterval(() => sweepLinks(db), 60_000);
+  sweep.unref();
+  server.on('close', () => clearInterval(sweep));
+  return server;
 }

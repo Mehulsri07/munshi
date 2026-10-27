@@ -15,8 +15,8 @@ async function remindSharma() {
 
 test('paying a link announces, closes khata, and writes one ledger line', async () => {
   const { db, ref } = await remindSharma();
-  assert.deepEqual(getPayLink(db, ref), { ref, merchantName: 'Ramesh Kirana', customerName: 'Sharma ji', amount: 450, status: 'pending' });
-  assert.deepEqual(payLink(db, ref, AT), { alreadyPaid: false, announcement: 'Sharma ji ne ₹450 chuka diye' });
+  assert.deepEqual(getPayLink(db, ref, AT), { ref, merchantName: 'Ramesh Kirana', customerName: 'Sharma ji', amount: 450, status: 'pending', expiresAt: new Date(AT.getTime() + 60 * 60_000).toISOString() });
+  assert.deepEqual(payLink(db, ref, AT), { alreadyPaid: false, expired: false, announcement: 'Sharma ji ne ₹450 chuka diye', name: 'Sharma ji', amount: 450 });
   assert.equal((db.prepare("SELECT status FROM khata WHERE customer_name='Sharma ji'").get() as any).status, 'paid');
   const l = getLedger(db, HERO_ID, AT);
   assert.equal(l.total, 450);
@@ -28,12 +28,12 @@ test('paying twice is idempotent', async () => {
   payLink(db, ref, AT);
   assert.equal(payLink(db, ref, AT)!.alreadyPaid, true);
   assert.equal(getLedger(db, HERO_ID, AT).total, 450);
-  assert.equal(getPayLink(db, ref)!.status, 'paid');
+  assert.equal(getPayLink(db, ref, AT)!.status, 'paid');
 });
 
 test('unknown ref returns null', () => {
   assert.equal(payLink(fresh(), 'nope', AT), null);
-  assert.equal(getPayLink(fresh(), 'nope'), null);
+  assert.equal(getPayLink(fresh(), 'nope', AT), null);
 });
 
 test('ledger excludes entries older than the window', async () => {

@@ -9,14 +9,19 @@ export type Detector = (db: DB, merchantId: string, at: Date) => Opportunity[];
 const DAY = 86_400_000;
 
 export const udhaarOverdue: Detector = (db, merchantId, at) =>
-  (db.prepare("SELECT id, customer_name, amount, given_on FROM khata WHERE merchant_id=? AND status='open'").all(merchantId) as any[])
+  (db.prepare(
+    `SELECT k.id, k.customer_name, k.amount, k.given_on,
+       EXISTS (SELECT 1 FROM pay_links p WHERE p.khata_id = k.id AND p.status='pending' AND p.expired_at IS NOT NULL) AS relink
+     FROM khata k WHERE k.merchant_id=? AND k.status='open'`,
+  ).all(merchantId) as any[])
     .map(k => ({ k, days: Math.floor((at.getTime() - new Date(k.given_on).getTime()) / DAY) }))
-    .filter(({ days }) => days > 7)
+    // Overdue after a week; and once a reminder's link ran out unpaid, still owed whatever its age.
+    .filter(({ k, days }) => days > 7 || k.relink)
     .map(({ k, days }) => ({
       type: 'udhaar_overdue',
       key: `khata:${k.id}`,
       estValue: k.amount,
-      payload: { khataId: k.id, customerName: k.customer_name, amount: k.amount, days },
+      payload: { khataId: k.id, customerName: k.customer_name, amount: k.amount, days, ...(k.relink ? { relink: true } : {}) },
     }));
 
 export const detectors: Detector[] = [udhaarOverdue, stockLow, groupBuyOpen, localDemandSpike, lapsedRegulars, cashGap];

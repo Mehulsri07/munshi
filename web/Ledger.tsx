@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, onEvents, rupees, type Ledger as LedgerData } from './api.ts';
-import { Nav, useCountUp } from './ui.tsx';
+import { Nav, Rupees, useCountUp } from './ui.tsx';
 
 const KIND_LABEL: Record<string, string> = {
   udhaar_recovered: 'Udhaar wapas',
@@ -44,7 +44,7 @@ export function Ledger() {
       <div className="masthead">
         <div className="wrap">
           <h1>Is hafte Munshi ne aapko dilaye</h1>
-          <span className="big-amt num">{data ? rupees(total) : '₹—'}</span>
+          <span className="big-amt num">{data ? <Rupees value={rupees(total)} /> : '₹—'}</span>
           <p>Har rupaya us kaam se juda hai jisse woh aaya.</p>
           {data && <ScoreStrip items={data.items} />}
         </div>

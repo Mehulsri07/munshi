@@ -2,7 +2,7 @@ export type ActionResult = { line: string; payUrl?: string; payFor?: { name: str
 export type Next = { id: number | null; type?: string; line?: string };
 export type Proposal = { id: number; line: string };
 export type ShelfResult = { line: string; next: Proposal | null };
-export type PayLink = { ref: string; merchantName: string; customerName: string; amount: number; status: 'pending' | 'paid' };
+export type PayLink = { ref: string; merchantName: string; customerName: string; amount: number; status: 'pending' | 'paid' | 'expired'; expiresAt: string | null };
 export type Ledger = {
   total: number;
   items: Array<{ kind: string; amount: number; label: string; ts: string; tool: string }>;
@@ -29,6 +29,7 @@ export class ApiError extends Error {
 
 // Demo key from ?key= (stored once) guards the merchant and control API on a public tunnel.
 const KEY = (() => { try { const k = new URLSearchParams(location.search).get('key'); if (k) localStorage.setItem('munshi-key', k); return localStorage.getItem('munshi-key') ?? ''; } catch { return ''; } })();
+export const demoKey = KEY;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(path, {
